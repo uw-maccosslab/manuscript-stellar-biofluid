@@ -1,0 +1,1051 @@
+---
+title: "LIT_PRM_Assays"
+author: "Deanna Plubell"
+date: "`r Sys.Date()`"
+output:
+    html_document:
+      code_folding: hide
+      toc: true
+      toc_float: true
+      number_sections: true
+      theme: spacelab
+      highlight: haddock
+---
+
+
+
+Corresponding analysis R code for the preprint:
+"Development of highly multiplex assays for biofluids with the Stellar MS"
+
+06/03/2024 - bioRxiv
+
+*This code is a work in progress!*
+
+
+```{r warning=FALSE, message=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(viridis)
+library(mzR)
+library(msdata)
+library(dplyr)
+library(ggrepel)
+library(tidyr)
+library(GGally)
+library(eulerr)
+library(limma)
+library(dplyr)
+library(ggrepel)
+library(GGally)
+```
+
+
+# Figure 2: assays from OT GPF DIA or LIT GPF DIA
+
+### F2.A: Correlation of GPF ID RTs
+```{r}
+otgpf_pep <- read.csv("OT_GPF_DIA_transitionAreas.csv", stringsAsFactors = FALSE)
+litgpf_pep <- read.csv("LIT_GPF_DIA_transitionAreas.csv", stringsAsFactors = FALSE)
+
+og.rtall <- otgpf_pep %>% select(PeptideModifiedSequence, PrecursorMz, PrecursorCharge, AverageMeasuredRetentionTime)
+og.rtall <- distinct(og.rtall)
+lg.rtall <- litgpf_pep %>% select(PeptideModifiedSequence, PrecursorMz, PrecursorCharge, AverageMeasuredRetentionTime)
+lg.rtall <- distinct(lg.rtall)
+
+i.rtall <- merge(og.rtall, lg.rtall, by = c("PeptideModifiedSequence", "PrecursorMz", "PrecursorCharge"))
+
+F2A <- ggplot(i.rtall, aes(x=AverageMeasuredRetentionTime.x, y=AverageMeasuredRetentionTime.y))+
+  geom_point(alpha=0.3, shape=16)+
+  labs(x="retention time (min) OT-GPF", y="retention time (min) LIT-GPF")+
+  theme_bw()
+F2A
+```
+
+### F2.B Overlap of targeted.
+```{r}
+otgpf_pep <- read.csv("OT_GPF_DIA_transitionAreas.csv", stringsAsFactors = FALSE)
+litgpf_pep <- read.csv("LIT_GPF_DIA_transitionAreas.csv", stringsAsFactors = FALSE)
+
+ogdp <- otgpf_pep %>% select(Peptide)
+ogdp <- distinct(ogdp)
+
+lgdp <- litgpf_pep %>% select(Peptide)
+lgdp <- distinct(lgdp)
+
+litp_pep <- read.csv("LITGPF_PRM_transition_list.csv", stringsAsFactors = FALSE)
+lgp <- litp_pep %>% select(Peptide.Modified.Sequence)
+lgp <- distinct(lgp)
+
+otp_pep <- read.csv("OTGPF_PRM_transition_list.csv", stringsAsFactors = FALSE)
+ogp <- otp_pep %>% select(Peptide.Modified.Sequence)
+ogp <- distinct(ogp)
+
+assay <- c("OT_GPF", "OT_PRM","LIT_GPF", "LIT_PRM")
+npep <- c(nrow(ogdp), nrow(ogp), nrow(lgdp), nrow(lgp))
+exp <- c("OT", "OT", "LIT", "LIT")
+
+npeps <- data.frame(assay, npep, exp)
+
+F2Ba <- ggplot(npeps, aes(x=factor(exp, level=c("LIT","OT")), y=npep, fill = assay)) + 
+  geom_col()+
+  scale_fill_manual(name="assay", values=c('OT_GPF'="#A894A3", 'OT_PRM'="#836484", 'LIT_GPF'="#EA9486", 'LIT_PRM'="#DD7362"))+
+  labs(y="Unique peptides", x="GPF acquisition")+
+  theme_bw()
+
+
+igpp <- intersect(ogp,lgp)
+
+
+ogpu <- ogp %>% filter(!Peptide.Modified.Sequence %in% igpp$Peptide.Modified.Sequence)
+lgpu <- lgp %>% filter(!Peptide.Modified.Sequence %in% igpp$Peptide.Modified.Sequence)
+
+fit2 <- euler(c("OT-GPF"=nrow(ogpu), "OT-GPF&LIT-GPF"=nrow(igpp), "LIT-GPF"=nrow(lgpu)))
+
+F2Bb <- plot(fit2, quantities = TRUE, 
+     fills = list(fill = c("#836484", "#DD7362"), alpha = 0.5))#,
+     #labels = list(col = "white", font = 4))
+```
+
+
+
+
+
+```{r}
+uog.rt <- og.rtall %>% filter(!PeptideModifiedSequence %in% lg.rtall)
+ulg.rt <- lg.rtall %>% filter(!PeptideModifiedSequence %in% og.rtall)
+
+fit3 <- euler(c("OT-GPF"=nrow(uog.rt), "OT-GPF&LIT-GPF"=nrow(i.rtall), "LIT-GPF"=nrow(ulg.rt)))
+
+plot(fit3, quantities = TRUE, 
+     fills = list(fill = c("#836484", "#DD7362"), alpha = 0.5))
+```
+
+
+
+
+### F2.D: Precursor x RT plots
+```{r warning=FALSE, message=FALSE}
+### concurrent Precursor plots from Skyline
+setwd("C:/Users/deann/Documents/jupyter_LIT_analysis/")
+lgp.con <- read.csv("LIT_GPF_survey_MMCC_concurrent.csv", header=TRUE)
+ogp.con <- read.csv("OT_GPF_survey_MMCC_concurrent.csv", header=TRUE)
+
+
+a <- ggplot(lgp.con, aes(x=Scheduled.Time, y=Concurrent.Precursors))+
+  geom_line(color="#D35936", size=0.7)+
+  scale_y_continuous(limits=c(0,100))+
+  scale_x_continuous(limits=c(0,31))+
+  labs(x=NULL, y="concurrent precursors")+
+  theme_bw() +
+  theme(panel.grid.minor = element_blank())
+
+b <- ggplot(ogp.con, aes(x=Scheduled.Time, y=Concurrent.Precursors))+
+  geom_line(color="#6D4665", size=0.7)+
+  scale_y_continuous(limits=c(0,100))+
+  scale_x_continuous(limits=c(0,31))+
+  labs(x=NULL, y="concurrent precursors")+
+  theme_bw() +
+  theme(panel.grid.minor = element_blank())
+
+
+### Precursor x RT plots
+setwd("C:/Users/deann/Documents/jupyter_LIT_analysis/")
+
+l <- "C:/Users/deann/Documents/jupyter_LIT_analysis/P2_202405_neo_150uID_CSF_LITGPFSurvey_100p_N01_30m_012.mzML" 
+ms <- openMSfile(l)
+hd <- header(ms)
+close(ms)
+
+inj_fig <- function(fp){
+    ms <- openMSfile(fp)
+    hd <- header(ms)
+    close(ms)
+    p <- ggplot(hd, aes(x=(retentionTime/60), y=isolationWindowTargetMZ, color=injectionTime))+
+      geom_point(shape=15, size=0.7)+
+      scale_color_viridis(option="A", begin = 0, end = .85,
+                      limits = c(10, 40),
+                      oob = scales::squish,
+                      labels = c("10", "20", "30", "40+"))+
+      labs(x="Retention time (min)", y="Precursor m/z")+
+      theme_bw()
+    print(p)
+}
+ 
+
+F2Da <- inj_fig(l)
+
+o <- "C:/Users/deann/Documents/jupyter_LIT_analysis/P2_202405_neo_150uID_CSF_OTGPFSurvey_100p_N01_30m_085.mzML"
+F2Db <- inj_fig(o)
+
+F2Dlit <- ggarrange(a, F2Da, nrow=2, heights =c(0.5, 1), align="v", common.legend = TRUE, legend = "right")
+F2Dot <- ggarrange(b, F2Db, nrow=2, heights =c(0.5, 1), align="v", common.legend = TRUE, legend = "right")
+
+F2D <- ggarrange(F2Dlit, F2Bot, nrow=2, align="hv", common.legend=TRUE, legend="right")
+```
+
+
+### F2.E: %CV for 100%, 50%, 10%, 5%
+```{r warning=FALSE, message=FALSE}
+### F2.C: %CV for 100%, 50%, 10%, 5%
+ogp.rep <- read.csv("OTGPF_PRM_MMCC_taf_long.csv")
+lgp.rep <- read.csv("LITGPF_PRM_MMCC_taf_long.csv")
+
+cv <- function(x) 100*(sd(x)/mean(x))
+
+ogp.cv <- ogp.rep %>%
+  group_by(Analyte.Concentration, Peptide) %>%
+  dplyr::summarise(mean=mean(Total.Area.Fragment, na.rm=TRUE),
+              cv=cv(Total.Area.Fragment))
+
+lgp.cv <- lgp.rep %>%
+  group_by(Analyte.Concentration, Peptide) %>% 
+  dplyr::summarise(mean=mean(Total.Area.Fragment, na.rm=TRUE),
+              cv=cv(Total.Area.Fragment))
+
+lgp.cv$Assay = "LIT GPF"
+ogp.cv$Assay = "OT GPF"
+
+
+ocv <- ogp.cv %>% filter(Peptide %in% unique(lgp.rep$Peptide))
+lcv <- lgp.cv %>% filter(Peptide %in% unique(ogp.rep$Peptide))
+
+c <- rbind(ocv,lcv)
+
+F2E <- c %>% filter(Analyte.Concentration %in% c(5,10,30,50,70,100)) %>% 
+  ggplot(aes(x=as.factor(Analyte.Concentration), y=cv, fill=Assay))+
+    geom_hline(yintercept=20, color="#ABC3B7", linetype="dashed")+
+    stat_boxplot(geom = "errorbar", width = 0.2, position=position_dodge(width=0.7))+
+    geom_boxplot(width=0.7, outlier.shape=NA)+
+    scale_fill_manual(name="Assay", values=c('OT GPF'="#836484", 'LIT GPF'="#DD7362"))+
+    labs(x="Dilution (%)", y="% coefficient of variation") +
+    theme_bw()+
+    theme(legend.position = "none")
+
+```
+
+### F2.F: Scatterplot: RTs
+```{r warning=FALSE, message=FALSE}
+### F2.F: Scatterplot: RTs
+og.rt <- read.csv("OT_GPF_DIA_rt.csv")
+
+ogp.rt <- ogp.rep %>% select(Analyte.Concentration, Peptide, Peptide.Retention.Time, Total.Area.Fragment)
+mrt <- ogp.rt %>%  group_by(Analyte.Concentration, Peptide) %>% 
+  dplyr::summarise(Pmean.rt=mean(as.numeric(Peptide.Retention.Time))) %>% 
+  ungroup()
+
+
+ort <- merge(mrt, og.rt, by=c("Peptide"))
+
+P1 <- ort %>% filter(Analyte.Concentration ==100) %>% select(Peptide, Pmean.rt, Peptide.Retention.Time)
+
+rt.fit <- lm(P1$Peptide.Retention.Time ~ P1$Pmean.rt)
+
+F2F <- ggplot(rt.fit, aes(x = .fitted, y = .resid)) +
+  geom_hline(yintercept = 0, linetype = 2, color="#ABC3B7", linewidth=1) +
+  geom_point(alpha=0.2, shape=16) +
+  xlab("PRM retention time (min)") +
+  ylab("retention time residuals (min)") +
+  theme_bw()
+```
+
+
+```{r warning=FALSE, message=FALSE}
+F2EF <- ggarrange(F2E, F2F, nrow=2, align="hv")
+F2DEF <- ggarrange(F2D, F2EF, ncol=2, align="hv", widths=c(1.2,1))
+```
+
+
+
+
+
+# Figure 3:
+
+Orbi DIA vs LIT PRM
+
+
+###F3.A: LOQ histo
+
+```{r warning=FALSE}
+od.loq <- read.delim("OTDIA_loq_boot_metrics_opt.txt", header=TRUE)
+lgp.loq <- read.delim("LITGPF_PRM_loq_boot_metrics_opt.txt", header=TRUE)
+
+colnames(od.loq)[6] <- "LOQ.DIA"
+colnames(lgp.loq)[6] <- "LOQ.PRM"
+
+colnames(od.loq)[5] <- "LOD.DIA"
+colnames(lgp.loq)[5] <- "LOD.PRM"
+
+od.rep <- read.csv("OTDIA_MMCC_taf_long.csv")
+
+od.loq <- od.loq %>% dplyr::filter(Peptide.Modified.Sequence %in% od.rep$Peptide.Modified.Sequence)
+
+lgp.loq <- lgp.loq %>% dplyr::filter(Peptide.Modified.Sequence %in% lgp.rep$Peptide.Modified.Sequence)
+
+
+i <- merge(lgp.loq, od.loq, by =c("Peptide.Modified.Sequence", "Protein.Name", "Precursor.Mz", "Precursor.Charge"))
+
+F3A <- ggplot(i) +
+  geom_vline(xintercept=median(i$LOQ.DIA), linetype="dashed", color="#28587B") +
+  geom_vline(xintercept=median(i$LOQ.PRM), linetype="dashed", color="#D35936") +
+  geom_histogram(aes(x=LOQ.DIA), color="#28587B", fill="#6D8C9B", alpha=0.5, binwidth=1) +
+  geom_histogram(aes(x=LOQ.PRM), color="#D35936", fill="#DD7362", alpha=0.5, binwidth=1) +
+  scale_x_continuous(limits=c(-1,99))+
+  labs(x="limit of quantification (% dilution)")+
+  theme_bw()
+
+
+mean(i$LOQ.DIA)
+median(i$LOQ.DIA)
+mean(i$LOQ.PRM)
+median(i$LOQ.PRM)
+```
+
+
+###F3.B: %CV boxplots
+```{r warning=FALSE, message=FALSE}
+od.rep <- read.csv("OTDIA_MMCC_taf_long.csv")
+
+od.cv <- od.rep %>%
+  group_by(Analyte.Concentration, Peptide) %>% 
+  dplyr::summarise(mean=mean(as.numeric(Total.Area.Fragment), na.rm=TRUE),
+              sd=sd(as.numeric(Total.Area.Fragment), na.rm=TRUE), 
+              cv=cv(as.numeric(Total.Area.Fragment)))
+
+od.cv$Assay = "OT DIA"
+
+dcv <- od.cv %>% filter(Peptide %in% lgp.rep$Peptide)
+pcv <- lgp.cv %>% filter(Peptide %in% od.rep$Peptide)
+
+c <- rbind(dcv,pcv)
+
+F3B <- c %>% filter(Analyte.Concentration %in% c(1, 5,10,30, 50, 70, 100)) %>% 
+  ggplot(aes(x=as.factor(Analyte.Concentration), y=cv, fill=Assay))+
+  geom_hline(yintercept=20, color="#ABC3B7", linetype="dashed")+
+    stat_boxplot(geom = "errorbar", width = 0.2, position=position_dodge(width=0.7))+
+    geom_boxplot(width=0.7, outlier.shape=NA)+
+    scale_fill_manual(name="Assay", values=c('OT DIA'="#6D8C9B", 'LIT GPF'="#DD7362"))+
+    labs(x="% dilution", y="% coefficient of variation") +
+    theme_bw()+
+    theme(legend.position = "none")
+```
+
+
+
+### (DONE) F3.C scatter density
+```{r}
+
+qratio <- function(df, concentration1, concentration2){
+  df <- df %>% filter(Analyte.Concentration ==  concentration2 |
+             Analyte.Concentration == concentration1) %>% 
+             select(-sd, -cv) %>% 
+             mutate(Analyte.Concentration=if_else(Analyte.Concentration == 
+                                                    concentration1, "Sample1", "Sample2")) %>% 
+             pivot_wider(names_from = Analyte.Concentration, values_from = c(mean)) %>% 
+             mutate(ratio= Sample2/Sample1)
+  df <- df %>% select(-Sample1, -Assay) %>% mutate(conc=concentration2)
+}
+
+
+conc <- c(0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 50.0, 70.0)
+idr.df<-data.frame()
+
+for (x in conc) {
+  df <- qratio(dcv, 100, x)
+  idr.df <- rbind(idr.df, df)
+}
+
+
+ipr.df<-data.frame()
+
+for (x in conc) {
+  df <- qratio(pcv, 100, x)
+  ipr.df <- rbind(ipr.df, df)
+}
+
+ratio_densityscatter <- function(i){
+  df <- ipr.df %>%  filter(conc==i)
+  p <- ggplot(df, aes(x = log2(Sample2), y = log2(ratio))) +
+  geom_hline(yintercept = log2(i/100), linetype = "dashed",linewidth=0.75, color="#ABC3B7") +
+  geom_hex(bins = 150) +
+  scale_fill_gradientn(colors = c("#487EA0","#723D63","#D35936", "#FCC25B"), name = "Peptides")+
+    scale_x_continuous(limits=c(7,30))+
+  scale_y_continuous(limits=c(-7.5,6))+
+  theme_bw()+
+  theme(panel.grid.minor = element_blank()) 
+  return(p)
+}
+
+p50 <- ratio_densityscatter(50)
+p30 <- ratio_densityscatter(30)
+p10 <- ratio_densityscatter(10)
+p5<- ratio_densityscatter(5)
+
+F3D <- ggarrange(p50, p30, p10, p5,  ncol=1, nrow=4, align="hv", common.legend=TRUE, legend="right")
+
+ratio_densityline <- function(i) {
+  ipr.df %>% filter(conc==i) %>% 
+  ggplot(aes(y=log2(ratio))) +
+  geom_hline(yintercept = log2(i/100), linetype="dashed", color="#ABC3B7") +
+  geom_density(size=1, color="#DD7362", fill="#DD7362", alpha=0.3) +
+  theme_minimal()+
+  scale_y_continuous(limits=c(-7.5,6))+
+  scale_x_continuous(limits=c(0,1)) +
+  theme(legend.position = "none", axis.text.y=element_blank(),
+          axis.ticks.y=element_blank(), axis.title.y = element_blank(),
+          panel.grid.minor = element_blank(),
+          strip.text = element_text(size = 9))
+  
+}
+
+p50d <- ratio_densityline(50)
+p30d <- ratio_densityline(30)
+p10d <- ratio_densityline(10)
+p5d <- ratio_densityline(5)
+
+F3E <- ggarrange(p50d, p30d, p10d, p5d, ncol=1, nrow=4, align="hv", common.legend=TRUE, legend="right")
+```
+
+
+```{r}
+F3AB <- ggarrange(NULL, F3A,F3B, nrow=3, align="hv", heights=c(0.2, 0.4, 0.4))
+
+F3DE <- ggarrange(F3D, F3E, ncol=2, align="hv", widths=c(1,0.2))
+
+F3 <- ggarrange(F3AB, F3DE, ncol=2, align="hv", widths=c(1,1.25))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Figure 4: Plasma EV survey assay in neurodegenerative disease
+
+### F5.A Assay stats
+
+### F5.B overlap
+
+```{r}
+se.rep <- read.csv("230127_p2_neo_30min_1599targets_opt_trans_pepleveldilution_trans_resultsa.csv")
+
+colnames(se.rep)[colnames(se.rep)=="Replicate.Name"] = "Replicate"
+
+se.rep <- se.rep %>%
+  mutate(Analyte.Concentration = case_when(startsWith(Replicate, "A") ~ 100,
+                                           startsWith(Replicate, "B") ~ 70,
+                                           startsWith(Replicate, "C") ~ 50,
+                                           startsWith(Replicate, "D") ~ 30,
+                                           startsWith(Replicate, "E") ~ 10,
+                                           startsWith(Replicate, "F") ~ 7,
+                                           startsWith(Replicate, "G") ~ 5,
+                                           startsWith(Replicate, "H") ~ 3,
+                                           startsWith(Replicate, "I") ~ 1,
+                                           startsWith(Replicate, "J") ~ 0.7,
+                                           startsWith(Replicate, "K") ~ 0.5,
+                                           startsWith(Replicate, "L") ~ 0.3,
+                                           startsWith(Replicate, "M") ~ 0.1,
+                                           startsWith(Replicate, "N") ~ 0))
+
+se.pep <- se.rep %>% group_by(Replicate, Analyte.Concentration, Peptide.Modified.Sequence, Protein.Name) %>% 
+  dplyr::summarise(Total.Area.Fragment=sum(as.numeric(Area), na.rm=TRUE))
+
+se.cv <- se.pep %>% group_by(Analyte.Concentration, Peptide.Modified.Sequence) %>% 
+  dplyr::summarise(mean=mean(as.numeric(Total.Area.Fragment), na.rm=TRUE),
+              sd=sd(as.numeric(Total.Area.Fragment), na.rm=TRUE), 
+              cv=cv(as.numeric(Total.Area.Fragment)))
+
+
+be.rep <- read.csv("230124_p2_neo_30min_3500targets_opt_trans_pepleveldilution_trans_results.csv")
+
+colnames(be.rep)[colnames(be.rep)=="Replicate.Name"] = "Replicate"
+
+be.rep <- be.rep %>%
+  mutate(Analyte.Concentration = case_when(startsWith(Replicate, "A") ~ 100,
+                                           startsWith(Replicate, "B") ~ 70,
+                                           startsWith(Replicate, "C") ~ 50,
+                                           startsWith(Replicate, "D") ~ 30,
+                                           startsWith(Replicate, "E") ~ 10,
+                                           startsWith(Replicate, "F") ~ 7,
+                                           startsWith(Replicate, "G") ~ 5,
+                                           startsWith(Replicate, "H") ~ 3,
+                                           startsWith(Replicate, "I") ~ 1,
+                                           startsWith(Replicate, "J") ~ 0.7,
+                                           startsWith(Replicate, "K") ~ 0.5,
+                                           startsWith(Replicate, "L") ~ 0.3,
+                                           startsWith(Replicate, "M") ~ 0.1,
+                                           startsWith(Replicate, "N") ~ 0))
+
+be.pep <- be.rep %>% group_by(Replicate, Analyte.Concentration, Peptide.Modified.Sequence, Protein.Name) %>% 
+  dplyr::summarise(Total.Area.Fragment=sum(as.numeric(Area), na.rm=TRUE))
+
+be.cv <- be.pep %>% group_by(Analyte.Concentration, Peptide.Modified.Sequence) %>% 
+  dplyr::summarise(mean=mean(as.numeric(Total.Area.Fragment), na.rm=TRUE),
+              sd=sd(as.numeric(Total.Area.Fragment), na.rm=TRUE), 
+              cv=cv(as.numeric(Total.Area.Fragment)))
+
+
+sep <- se.cv %>% filter(Analyte.Concentration==100) %>% select(Peptide.Modified.Sequence)
+
+bep <- be.cv %>% filter(Analyte.Concentration==100) %>% select(Peptide.Modified.Sequence)
+
+iep <- intersect(sep,bep)
+
+library(eulerr)
+sep <- sep %>% filter(!Peptide.Modified.Sequence %in% iep$Peptide.Modified.Sequence)
+bep <- bep %>% filter(!Peptide.Modified.Sequence %in% iep$Peptide.Modified.Sequence)
+
+fit <- euler(c("Larger"=nrow(bep), "Larger&Smaller"=nrow(iep), "Smaller"=nrow(sep)))
+
+F5Ab <- plot(fit, quantities = TRUE, 
+     fills = list(fill = c("#86A397", "#CBC0AD"), alpha = 0.5))#,
+     #labels = list(col = "white", font = 4))
+```
+
+
+### (DONE) F5.C: MMCC %CVs (diff gradient lengths?)
+
+```{r}
+be.cv$Assay = "Large"
+se.cv$Assay = "Small"
+
+bs.cv <- rbind(be.cv, se.cv)
+
+F5B<- bs.cv %>% filter(Analyte.Concentration %in% c(1, 5, 10, 30, 50, 70, 100)) %>% 
+  ggplot(aes(x=as.factor(Analyte.Concentration), y=cv, fill=Assay))+
+  geom_hline(yintercept=20, color="#ABC3B7", linetype="dashed")+
+    stat_boxplot(geom = "errorbar", width = 0.2, position=position_dodge(width=0.7))+
+    geom_boxplot(width=0.7, outlier.shape=NA)+
+    scale_fill_manual(name="Assay", values=c('Large'="#86A397", 'Small'="#CBC0AD"))+
+    labs(x="Dilution (%)", y="% coefficient of variation") +
+    scale_y_continuous(limits=c(0, 120))+
+    theme_bw()#+
+    #theme(legend.position = "none")
+```
+
+
+```{r}
+b10 <- be.cv %>% filter(Analyte.Concentration == 10)
+median(b10$cv)
+
+s1 <- se.cv %>% filter(Analyte.Concentration == 1)
+median(s1$cv)
+```
+
+
+### (DONE) F5.C-D: Accuracy 
+
+```{r}
+se.cv <- se.cv %>% filter(!Analyte.Concentration == 0|NA)
+se.cv[se.cv=="#N/A"] <- NA
+se.cv <- se.cv %>% filter(!mean == 0|NA)
+
+
+qratio <- function(df, concentration1, concentration2){
+  df <- df %>% filter(Analyte.Concentration ==  concentration2 | Analyte.Concentration == concentration1) %>% 
+             dplyr::select(-sd, -cv) %>% 
+             dplyr::mutate(Analyte.Concentration=if_else(Analyte.Concentration == 
+                                                    concentration1, "Sample1", "Sample2")) %>% 
+             dplyr::mutate(row = row_number()) %>%
+             tidyr::pivot_wider(names_from = Analyte.Concentration, values_from = c(mean)) %>% 
+             mutate(ratio= Sample2/Sample1)
+  df <- df %>% select(-Sample1, -Sample2, - row) %>% mutate(conc=concentration2)
+}
+
+#FOR SOME REASON THIS ISN"T WORKING.
+#conc <- c(0.1, 0.3, 0.5, 0.7, 1, 3, 5, 7, 10, 30, 50, 70)
+#se.df<-data.frame()
+
+#for (x in conc) {
+#  df <- qratio(se.cv, 100, x)
+#  se.df <- rbind(se.df, df)
+#}
+
+#Manual for now
+d70 <- qratio(se.cv, 100,70)
+d50 <- qratio(se.cv, 100,50)
+d30 <- qratio(se.cv, 100,30)
+d10 <- qratio(se.cv, 100,10)
+d5 <- qratio(se.cv, 100,5)
+d1 <- qratio(se.cv, 100,1)
+
+se.df <- Reduce(function(...) merge(..., all=TRUE), list(d70, d50, d30, d10, d5, d1))
+
+
+F5D <- se.df %>% filter(conc %in% c(1, 5, 10, 30, 50, 70)) %>%  
+                  ggplot(aes(x=as.factor(conc), y=log2(ratio)))+
+  geom_hline(yintercept=c(log2(0.7), log2(0.5), log2(0.3), log2(0.1), log2(0.05), log2(0.01)), 
+             linetype=2, color="#D9D0C0", size=0.7)+
+  geom_violin(fill="#CBC0AD", color="#CBC0AD",alpha=0.5)+
+    stat_boxplot(geom = "errorbar", width = 0.1)+
+  geom_boxplot(width=0.1, outlier.shape=NA, fill="#CBC0AD")+
+  scale_y_continuous(limits=c(-7,5))+
+  labs(x="dilution (%)", y="precursor log2(dilution/100%)") +
+  theme_bw()
+
+be.cv <- be.cv %>% filter(!Analyte.Concentration == 0|NA)
+be.cv[be.cv=="#N/A"] <- NA
+be.cv <- be.cv %>% filter(!mean == 0|NA)
+
+#Manual for now
+bd70 <- qratio(be.cv, 100,70)
+bd50 <- qratio(be.cv, 100,50)
+bd30 <- qratio(be.cv, 100,30)
+bd10 <- qratio(be.cv, 100,10)
+bd5 <- qratio(be.cv, 100,5)
+bd1 <- qratio(be.cv, 100,1)
+
+be.df <- Reduce(function(...) merge(..., all=TRUE), list(bd70, bd50, bd30, bd10, bd5, bd1))
+
+F5C <-be.df %>% filter(conc %in% c(1, 5, 10, 30, 50, 70)) %>%  
+                  ggplot(aes(x=as.factor(conc), y=log2(ratio)))+
+  geom_hline(yintercept=c(log2(0.7), log2(0.5), log2(0.3), log2(0.1), log2(0.05), log2(0.01)), 
+             linetype=2, color="#ABC3B7", size=0.7)+
+  geom_violin(fill="#86A397", color="#86A397",alpha=0.5)+
+    stat_boxplot(geom = "errorbar", width = 0.1)+
+  geom_boxplot(width=0.1, outlier.shape=NA, fill="#86A397")+
+  scale_y_continuous(limits=c(-7,5))+
+  labs(x="dilution (%)", y="precursor log2(dilution/100%)") +
+  theme_bw()
+
+F5CD <- ggarrange(F5C, F5D, nrow=2, align="hv")
+F5AB <- ggarrange(NULL, F5B, nrow=2, align="hv", heights = c(0.5, 1))
+```
+
+```{r}
+F5 <- ggarrange(F5AB, F5CD, ncol=2, align ="hv", widths=c(1,0.7))
+F5
+```
+
+
+
+
+
+
+
+# Figure 5: CSF neurodegenerative assay
+
+### F5.B: Dynamic range
+```{r}
+cn.df <- read.csv("CSF_ADPD_PRM_individualquant.csv", header=TRUE, stringsAsFactors = FALSE)
+og.prot <- read.csv("OT_GPF_DIA_protein.csv", header=TRUE, stringsAsFactors = FALSE)
+
+og.prot$Rank <- rank(-og.prot$Sum.Total.Area.Fragment)
+cn.prot <- unique(cn.df$Protein)
+
+cn.og.prot <- data.frame(og.prot[og.prot$Protein %in% cn.prot,])
+cn.og.prot$Assay <- "CSF_neuro"
+
+non.og.prot <- data.frame(og.prot[!og.prot$Protein %in% cn.prot,])
+non.og.prot$Assay <- "none"
+
+cn.prot <- rbind(cn.og.prot, non.og.prot)
+
+F4B <- ggplot(cn.prot, aes(x=Rank, y=log10(Sum.Total.Area.Fragment))) +
+  geom_point(alpha=0.5, shape=16) +
+  scale_color_manual(values=c("CSF_neuro"="#CBC0AD", "none"="black")) +
+  geom_point(data=filter(cn.prot, Assay=="CSF_neuro"), 
+             aes(x=Rank, y=log10(Sum.Total.Area.Fragment)), color="#CBC0AD", shape=16) +
+  geom_label_repel(data=filter(cn.prot, Assay=="CSF_neuro"), 
+                   aes(label=paste(substr(Protein,11,15))),
+                   fontface='bold',
+                   fill="#CBC0AD",
+                   color='grey20',
+                   size=4,
+                   max.overlaps=(getOption("ggrepel.max.overlaps", default=30)),
+                   min.segment.length = 0.2,
+                   segment.color = 'grey30',
+                   label.size=NA) +
+  labs(title = "Neurodegenerative protein assay", x="abundance rank", y="log10(protein abundance)") +
+  theme_bw() 
+  
+```
+
+
+### F4.C: Volcano
+
+```{r}
+cn.df <- read.csv("CSF_ADPD_PRM_individualquant_long.csv", header=TRUE, stringsAsFactors = FALSE)
+cn.meta <- read.csv("CSF_ADPD_metaf.csv", header=TRUE)
+
+cn <- cn.df %>% mutate(Total.Area.Fragment = gsub("#N/A", NA, Total.Area.Fragment))
+cn <- cn %>% select(-Analyte.Concentration)
+cn$Total.Area.Fragment <- as.numeric(cn$Total.Area.Fragment)
+cn$Area.Normalized <- (cn$Total.Area.Fragment/cn$Total.Ion.Current.Area)*median(cn$Total.Ion.Current.Area)
+
+cn.pep <- cn
+cn <- cn %>% dplyr::select(-Total.Area.Fragment, -Peptide.Retention.Time, -Total.Ion.Current.Area, -Peptide, -First.Position, -Last.Position) %>% 
+  tidyr::pivot_wider(names_from=Replicate, values_from=c(Area.Normalized))
+
+## Based on preliminary analysis these samples are removed due to incorrect labeling
+removed <-c("240212_P1_IO15cm_NeoLC_AD105_PRM_TC17_110", "240212_P1_IO15cm_NeoLC_AD105_PRM_TC18_111")
+cn.meta <- cn.meta %>% filter(!Replicate %in% removed)
+cn  <- cn %>% select(!all_of(removed))
+
+
+#### Significance testing
+design <- model.matrix(~0 + factor(testmeta$Diagnosis, level=c('HC', 'AD', 'PDCN', 'PDD')))
+
+colnames(design) <- c('HC', 'AD', 'PDCN', 'PDD')
+
+library(limma)
+
+cnames <- testdf$Peptide.Modified.Sequence
+smdf <- as.data.frame(testdf[,3:ncol(testdf)])
+
+rownames(smdf) <- cnames
+
+smdf <- data.matrix(log2(smdf))
+
+fit <- lmFit(smdf, design)
+contrast.matrix <- makeContrasts(AD-HC, AD-PDCN, AD-PDD, 
+                                 PDD-HC, PDD-PDCN,
+                                 PDCN-HC,
+                                 levels=design)
+
+fits <- contrasts.fit(fit, contrast.matrix)
+fits <- eBayes(fits)
+
+results <- decideTests(fits)
+
+comp_sig <- function(f, r){
+    m <- vector("integer", r)
+    for(i in seq_len(r)) {
+        t <- topTable(f, coef=i, adjust="BH", n=Inf)
+        s <- sum(t$adj.P.Val < 0.05, na.rm=TRUE)
+        m[i] <- s
+    }
+    df <- as.data.frame(cbind("comparison"=c('AD v. HC', 'AD v. PDCN', 'AD v. PDD',
+                                             'PDD v. HC', 'PDD v. PDCN', 
+                                             'PDCN v. HC'), "n sig"=m))
+    return(df)
+}
+
+s <- comp_sig(fits, 6)
+s
+
+
+ADvHC <- topTable(fits, coef=1, adjust="BH", n=Inf)
+ADvPDCN <- topTable(fits, coef=2, adjust="BH", n=Inf)
+
+pep <- rownames(ADvHC)
+ADvHC <- cbind("Peptide.Modified.Sequence"=pep, ADvHC)
+prot <- cn[,1:2]
+
+pADvHC <- ADvHC %>% inner_join(prot, by="Peptide.Modified.Sequence")
+
+F4D <- ggplot(pADvHC, aes(x=logFC, y=-log10(P.Value))) +
+  geom_point(alpha=0.3, shape=16) +
+  geom_point(data=filter(pADvHC, adj.P.Val < 0.05 & abs(logFC) > 0.5), 
+             aes(x=logFC, y=-log10(P.Value)), color="white", shape=16) +
+  geom_point(data=filter(pADvHC, adj.P.Val < 0.05 & logFC < -0.5), 
+             aes(x=logFC, y=-log10(P.Value)), color="#86A397", alpha=0.3, shape=19) +
+  geom_point(data=filter(pADvHC, adj.P.Val < 0.05 & logFC > 0.5), 
+             aes(x=logFC, y=-log10(P.Value)), color="#D35936", alpha=0.3, shape=19) +
+  geom_vline(xintercept = c(-0.5, 0.5), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = 3.2, col = "gray", linetype = 'dashed') + 
+  geom_text_repel(data=filter(pADvHC, adj.P.Val < 0.05 & logFC < -0.5), 
+                   aes(label=paste(substr(Protein,11,15))),
+                   fontface='bold',
+                   color="#86A397",
+                   size=4,
+                   max.overlaps=(getOption("ggrepel.max.overlaps", default=20)),
+                   min.segment.length = 0.2,
+                   segment.color = 'grey30') +
+  geom_text_repel(data=filter(pADvHC, adj.P.Val < 0.05 & logFC > 0.5), 
+                   aes(label=paste(substr(Protein,11,14))),
+                   fontface='bold',
+                   color="#D35936",
+                   size=4,
+                   max.overlaps=(getOption("ggrepel.max.overlaps", default=50)),
+                   min.segment.length = 0.2,
+                   segment.color = 'grey30') +
+  labs(title="AD v. HC - significant peptides")+
+  scale_x_continuous(limits=c(-2.5,7.6))+
+  theme_bw()
+
+
+
+F5CD <- ggarrange(NULL, F4C, F4D, ncol=3, align="hv", widths=c(0.5,1,1))
+
+cn_palette <- c("HC"="#86A397", "AD" ="#D35936", "PDCN" = "#6D4665", "PDD" = "#28587B")
+cn_order <- c('HC', 'AD', 'PDCN', 'PDD')
+
+cn.diff.pep <- function(peptide.seq){
+  meta <- testmeta
+  df <- testdf
+  df <- df[grep(peptide.seq, df$Peptide.Modified.Sequence),]
+  tdf <- as.data.frame(t(df[,3:ncol(df)]))
+  tdf <- cbind(tdf, meta[,2:ncol(meta)])
+  level_order <- cn_order
+
+  a <-ggplot(tdf, aes(x = factor(Diagnosis, levels=cn_order), y = log2(tdf[,1]), 
+                     fill=factor(Diagnosis, levels=cn_order))) +
+    stat_boxplot(geom = "errorbar", width = 0.2)+
+    stat_boxplot(fill="white", outlier.shape=NA, width=0.7)+
+    geom_boxplot(alpha=0.5, color="black", outlier.shape = NA, width=0.7) +
+    geom_jitter(aes(color = Diagnosis), shape = 16, width=0.07, alpha=0.7, size=2)+
+    scale_fill_manual(name="Diagnosis", values=cn_palette) +
+    scale_colour_manual(name="Diagnosis", values=cn_palette) +
+    labs(title=peptide.seq, x=NULL, y="log2(peptide abundance)", fill="Diagnosis") +
+    theme_bw() +
+    guides(color = "none")
+  
+  return(a)
+}
+
+F5Ea <- cn.diff.pep("SGYSSPGSPGTPGSR") # sp|P10636|TAU_HUMAN
+F5Eb <- cn.diff.pep("IYVDDGLISLQVK") # sp|P14618|KPYM_HUMAN
+F5Ec <- cn.diff.pep("LALGDDSPALK") # sp|P17174|AATC_HUMAN
+```
+
+
+
+### F4.F: APOE comparison with allele counts
+```{r warning=FALSE}
+meta <- cn.meta
+df <- cn
+df <- df[grep("LGADMEDVR", df$Peptide.Modified.Sequence),]
+tdf <- as.data.frame(t(df[,3:ncol(df)]))
+tdf <- cbind(tdf, meta[,2:ncol(meta)])
+level_order <- cn_order
+
+F5Ed <-ggplot(tdf, aes(x = factor(Diagnosis, levels=cn_order), y = log2(tdf[,1]), 
+                     fill=factor(Diagnosis, levels=cn_order))) +
+    stat_boxplot(geom = "errorbar", width = 0.2)+
+    stat_boxplot(fill="white", outlier.shape=NA, width=0.7)+
+    geom_boxplot(alpha=0.5, color="black", outlier.shape = NA, width=0.7) +
+    geom_jitter(aes(color = Diagnosis), shape = 16, width=0.07, alpha=0.7, size=2)+
+    scale_fill_manual(name="Diagnosis", values=cn_palette) +
+    scale_colour_manual(name="Diagnosis", values=cn_palette) +
+    labs(title="APOE-E4: LGADMEDVR", x=NULL, y="log2(peptide abundance)", fill="Diagnosis") +
+    theme_bw() 
+
+Etdf<- tdf[!is.na(tdf$E4.Allele),]
+
+F5Ee <- ggplot(Etdf, aes(x = factor(E4.Allele), y = log2(Etdf[,1]))) +
+    stat_boxplot(geom = "errorbar", width = 0.2)+
+    stat_boxplot(fill="white", outlier.shape=NA, width=0.7)+
+    geom_boxplot(alpha=0.7, color="black", fill="#CBC0AD", outlier.shape = NA, width=0.7) +
+    geom_jitter(fill='grey20', shape = 21, width=0.07, alpha=0.7, size=2)+
+    labs(x=NULL, y="log2(peptide abundance)") +
+    theme_bw() #+
+
+
+F5EF <- ggarrange(F4Ea, F4Eb, F4Ec, F4Ed, F4Ee, ncol=5, legend='right', align='hv', common.legend=TRUE)
+```
+
+```{r}
+F5 <- ggarrange(F4CD, F4EF, nrow=2, align="hv", heights=c(1,0.6))
+```
+
+
+
+
+
+# Figure 6. Plasma MagNet data
+
+### F6.B: reps density scatters
+
+
+```{r message=FALSE, warning=FALSE}
+
+lep.rep <- read.csv("230315_lit_peptide_areas.csv")
+
+le <- lep.rep %>% filter(Condition=="BatchQC") %>% filter(startsWith(Replicate.Name, "CP"))
+le$Total.Area <- as.numeric(le$Total.Area)
+le <- na.omit(le)
+
+#For some reason this peptide has two entries, just removing to save time
+le <- le[-grep("TPEYYPN", le$Peptide.Modified.Sequence),]
+le <- distinct(le)
+
+l <- le %>% dplyr::select(Replicate.Name, Peptide.Modified.Sequence, Total.Area, Precursor.Mz) %>%
+  tidyr::pivot_wider(names_from=Replicate.Name, values_from=c(Total.Area))
+
+
+logl <- log2(l[,3:6])
+
+colnames(logl) <- paste(substr(colnames(logl), 1,4))
+logl <- logl %>% select(CP01, CP02, CP03, CP04)
+
+
+histl <- function(data, mapping, ...){
+  ggplot(data = data, mapping=mapping) +
+    geom_histogram(color="#86A397", fill="#ABC3B7")
+}
+
+density_hexl <- function(data, mapping, ...){
+  ggplot(data = data, mapping=mapping) +
+    geom_point(color="#51826B", size=0.1, alpha=0.3) +
+    geom_hex(bins = 100) +
+    scale_fill_gradientn(colors = c("#ABC3B7", "#51826B","#7CA331", "#FCC25B"), name = "Peptides")
+}
+
+lref <- ggpairs(logl,
+  diag = list(continuous = hist),
+  lower = list(continuous= density_hex)) +
+  theme_bw()
+
+```
+
+
+### F6.C: Volcano/heatmap
+```{r}
+# read in meta data and skyline total fragment area quants
+setwd("C:/Users/deann/Documents/jupyter_LIT_analysis/")
+
+
+ep.df <- read.csv("EV_PRM_individualquant_long.csv", header=TRUE, stringsAsFactors = FALSE)
+ep.meta <- read.csv("EV_HCN_ADD_PDD_PDCN_meta.csv", header=TRUE)
+
+edf <- ep.df[-grep("CP|KP", ep.df$Replicate),]
+edf <- edf %>%  select(-Analyte.Concentration)
+em <- ep.meta[-grep("reference", ep.meta$Condition),]
+
+
+et <- edf %>% mutate(Total.Area.Fragment = gsub("#N/A", NA, Total.Area.Fragment))
+
+et$Total.Area.Fragment <- as.numeric(et$Total.Area.Fragment)
+et$Area.Normalized <- (et$Total.Area.Fragment/et$Total.Ion.Current.Area)*median(et$Total.Ion.Current.Area)
+
+et <- et %>% dplyr::select(-Total.Area.Fragment, -Peptide.Retention.Time, -Total.Ion.Current.Area, -Peptide, -First.Position, -Last.Position) %>% 
+  tidyr::pivot_wider(names_from=Replicate, values_from=c(Area.Normalized))
+
+
+
+#### PD v non
+em$C3_PD <- ifelse(em$Condition %in% c("PDD","PDCN"), "PD", "nonPD")
+
+#### Significance testing
+design <- model.matrix(~0+ factor(em$C3_PD, level=c('PD', 'nonPD')))
+
+colnames(design) <- c('PD', 'nonPD')
+
+contrast.matrix <- makeContrasts(PD-nonPD,
+                                 levels=design)
+
+smdf <- as.data.frame(et[,3:ncol(et)])
+rownames(smdf) <- et$Peptide.Modified.Sequence
+
+smdf <- data.matrix(log2(smdf))
+
+fit <- lmFit(smdf, design)
+fits <- contrasts.fit(fit, contrast.matrix)
+fits <- eBayes(fits)
+
+results <- decideTests(fits)
+
+comp_sig <- function(f, r){
+    m <- vector("integer", r)
+    for(i in seq_len(r)) {
+        t <- topTable(f, coef=i, adjust="BH", n=Inf)
+        s <- sum(t$adj.P.Val < 0.05, na.rm=TRUE)
+        m[i] <- s
+    }
+    df <- as.data.frame(cbind("comparison"=c('PD v. nonPD'), "n sig"=m))
+    return(df)
+}
+
+s <- comp_sig(fits,1)
+s
+
+
+eC3 <- topTable(fits, coef=1, adjust="BH", n=Inf)
+
+eC3 <- cbind("Peptide.Modified.Sequence"=rownames(eC3), eC3)
+prot <- et[,1:2]
+
+peC3 <- eC3 %>% inner_join(prot, by="Peptide.Modified.Sequence")
+```
+
+```{r fig.height=6, fig.width=6}
+
+F6B <- ggplot(peC3, aes(x=logFC, y=-log10(P.Value))) +
+  geom_point(alpha=0.3, color="black", shape=16) +
+  geom_point(data=filter(peC3, adj.P.Val < 0.05 & abs(logFC) > 0.5), 
+             aes(x=logFC, y=-log10(P.Value)), color="white", shape=16) +
+  geom_point(data=filter(peC3, adj.P.Val < 0.05 & logFC < -0.5), 
+             aes(x=logFC, y=-log10(P.Value)), color="#86A397", alpha=0.3, shape=19) +
+  geom_point(data=filter(peC3, adj.P.Val < 0.05 & logFC > 0.5), 
+             aes(x=logFC, y=-log10(P.Value)), color="#28587B", alpha=0.3, shape=19) +
+  geom_vline(xintercept = c(-0.5, 0.5), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = 0.01, col = "gray", linetype = 'dashed') + 
+  geom_text_repel(data=filter(peC3, adj.P.Val < 0.05 & logFC < -0.5), 
+                   aes(label=paste(substr(Protein,11,15))),
+                   fontface='bold',
+                   color="#86A397",
+                   size=4,
+                   max.overlaps=(getOption("ggrepel.max.overlaps", default=20)),
+                   min.segment.length = 0.2,
+                   segment.color = 'grey30') +
+  geom_text_repel(data=filter(peC3, adj.P.Val < 0.05 & logFC > 0.5), 
+                   aes(label=paste(substr(Protein,11,15))),
+                   fontface='bold',
+                   color="#28587B",
+                   size=4,
+                   max.overlaps=(getOption("ggrepel.max.overlaps", default=50)),
+                   min.segment.length = 0.2,
+                   segment.color = 'grey30') +
+  labs(title="PD v. nonPD - significant peptides")+
+  #scale_x_continuous(limits=c(-2.5,7.5))+
+  theme_bw()
+
+```
+
+
+### F6.D: peptides
+
+```{r}
+et_palette <- c("HCN"="#86A397", "ADD" ="#D35936", "PDCN" = "#6D4665", "PDD" = "#28587B")
+et_order <- c('HCN', 'ADD', 'PDCN', 'PDD')
+
+et.diff.pep <- function(peptide.seq){
+  meta <- em
+  df <- et
+  df <- df[grep(peptide.seq, df$Peptide.Modified.Sequence),]
+  tdf <- as.data.frame(t(df[,3:ncol(df)]))
+  tdf <- cbind(tdf, meta[,2:ncol(meta)])
+  level_order <- et_order
+
+  a <-ggplot(tdf, aes(x = factor(Condition, levels=et_order), y = log2(tdf[,1]), 
+                     fill=factor(Condition, levels=et_order))) +
+    stat_boxplot(geom = "errorbar", width = 0.2)+
+    stat_boxplot(fill="white", outlier.shape=NA, width=0.7)+
+    geom_boxplot(alpha=0.5, color="black", outlier.shape = NA, width=0.7) +
+    geom_jitter(aes(color = Condition), shape = 16, width=0.07, alpha=0.7, size=2)+
+    scale_fill_manual(name="Condition", values=et_palette) +
+    scale_colour_manual(name="Condition", values=et_palette) +
+    labs(title=peptide.seq, x=NULL, y="log2(peptide abundance)", fill="Condition") +
+    theme_bw() +
+    guides(color = "none")
+  
+  return(a)
+}
+
+F6Da <- et.diff.pep("LGDVISIQPC") #TERA
+F6Db <- et.diff.pep("SQVLQFFSSDIC") #CD36
+
+F6Dc <-et.diff.pep("VVLIGDSGVGK") #RAB11A/B
+
+F6Dd <- et.diff.pep("VIISAPSADAPMFVMGVNHEK") #G3P
+F6De <- et.diff.pep("YLAEFATGNDR") #1433
+
+F6D <- ggarrange(F6Da, F6Db, F6Dc, F6Dd, F6De, nrow=1, align="hv", common.legend=TRUE, legend="right")
+```
+
+
+
